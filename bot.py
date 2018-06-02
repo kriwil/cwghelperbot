@@ -11,47 +11,27 @@ import redis
 import regex
 import telegram
 
-# import logging
-# logging.basicConfig(
-#     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
-# )
-# logger = logging.getLogger(__file__)
+import logging
+
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
+logger = logging.getLogger(__file__)
 
 TOKEN = os.environ.get("TELEGRAM_API_TOKEN")
 CHAT_WARS_ID = 408101137
 WAR_UTC_HOURS = [time(7), time(15), time(23)]
 
-STATE_ATTACK = "⚔️"
+STATE_ATTACK = "⚔"
 STATE_DEFEND = "🛡"
 # STATE_REST = "🛌"
 
 
-_guild_info = """
-🦈[1XP] aegis
-Commander: FourEverClover
-🏅Level: 5 🎖Glory: 3178
-👥 14/15
-➖
-#1 🛡42 [🛡] Jagoan Neon
-#2 🏹39 [⚔️] Princess
-#3 🛡38 [🛡] FourEverClover
-#4 🛡35 [🛌] Dragonshark
-#5 🛡33 [🛌] DarkMagician
-#6 🛡33 [🛡] nxyluv
-#7 📦32 [🛡] And so He
-#8 📦30 [🛡] GfriendSinB
-#9 🛡27 [🛡] Schneeleopard
-#10 ⚗️27 [🛌] Janice
-#11 📦27 [🛡] xAceyx
-#12 ⚒26 [🛡] to hell with
-#13 📦26 [🛡] Dense
-#14 📦24 [🛡] KujouMikoto
-➖
-More info: /g_help
-"""
+connection = redis.StrictRedis(host="localhost", port=6379, db=0)
 
 
-connection = redis.StrictRedis(host="db", port=6379, db=0)
+class GuildExistError(Exception):
+    pass
 
 
 def to_datetime(dt) -> datetime:
@@ -131,19 +111,34 @@ def guild_info_parser(bot, update):
     if is_guild_info(text):
         group_id = message.chat_id
         timestamp = MayaDT.from_datetime(message.forward_date).datetime(to_timezone="UTC")
-        parse_guild_info(group_id, text, timestamp=timestamp)
+        try:
+            parse_guild_info(group_id, text, timestamp=timestamp)
+        except GuildExistError:
+            message.reply_text("sorry, can't proccess the data. this group belongs to other guild.")
+
         # print(group_id)
         # print(message.forward_from)
         # print(message.date)
         # print(message.forward_date)
         # bot.send_message(chat_id=message.chat_id, text="ok")
+    else:
+        bot.send_message(
+            chat_id=group_id, text="something is wrong", parse_mode=telegram.ParseMode.MARKDOWN
+        )
 
 
 def resting(bot, update):
     group_id = update.message.chat_id
     guild = get_guild(group_id)
-    text = "  \n".join(guild.resting_names)
-    bot.send_message(chat_id=group_id, text=text, parse_mode=telegram.ParseMode.MARKDOWN)
+    if guild:
+        text = "  \n".join(guild.resting_names)
+        bot.send_message(chat_id=group_id, text=text, parse_mode=telegram.ParseMode.MARKDOWN)
+    else:
+        bot.send_message(
+            chat_id=group_id,
+            text="send guild info data, and then try again.",
+            parse_mode=telegram.ParseMode.MARKDOWN,
+        )
 
 
 def glory_update(bot, update):
@@ -153,12 +148,23 @@ def glory_update(bot, update):
     bot.send_message(chat_id=group_id, text=text, parse_mode=telegram.ParseMode.MARKDOWN)
 
 
+def show_help(bot, update):
+    group_id = update.message.chat_id
+    commands = [
+        ("resting", "show resting members based on latest guild info"),
+        ("glory", "slow glory gain for the last war (need both before and after war guild info)"),
+        ("help", "show this message"),
+    ]
+    text = "  \n".join([f"/{cmd} -- {desc}" for cmd, desc in commands])
+    bot.send_message(chat_id=group_id, text=text, parse_mode=telegram.ParseMode.MARKDOWN)
+
+
 # def start(bot, update):
 #     bot.send_message(chat_id=update.message.chat_id, text="welcome")
 
 
 def unknown(bot, update):
-    bot.send_message(chat_id=update.message.chat_id, text="unknown command, sorry.")
+    bot.send_message(chat_id=update.message.chat_id, text="unknown command, try /help")
 
 
 def is_guild_info(text):
@@ -252,6 +258,14 @@ def parse_guild_info(group_id, text, timestamp):
         raw_guild_data = lines[0]
         guild = parse_guild_meta(raw_guild_data)
 
+    # check it the group allowed to proceed
+    tag = get_stored_tag(group_id)
+    if tag:
+        if tag != guild.tag:
+            raise GuildExistError
+    else:
+        store_tag(group_id, guild.tag)
+
     glory = 0
     # level = 0
 
@@ -279,7 +293,7 @@ def parse_guild_info(group_id, text, timestamp):
 
 
 def save_guild(group_id, guild):
-    key = f"group-{group_id}"
+    key = f"groupguild-{group_id}"
     guild_dict = attr.asdict(
         guild, filter=attr.filters.exclude(attr.fields(Status).timestamp, datetime)
     )
@@ -288,19 +302,27 @@ def save_guild(group_id, guild):
 
 
 def get_guild(group_id):
-    key = f"group-{group_id}"
+    key = f"groupguild-{group_id}"
     guild_dict = connection.execute_command("JSON.GET", key, "NOESCAPE")
     if guild_dict:
         return guild_from_dict(json.loads(guild_dict))
     return None
 
 
-def main():
-    # group_id = 111
-    # parse_guild_info(group_id, _guild_info)
-    # get_guild(group_id)
-    # return
+def get_stored_tag(group_id):
+    key = f"grouptag-{group_id}"
+    tag = connection.get(key)
+    if tag:
+        return tag.decode("utf-8")
+    return None
 
+
+def store_tag(group_id, tag):
+    key = f"grouptag-{group_id}"
+    connection.set(key, tag)
+
+
+def main():
     filter_guild_info = FilterGuildInfo()
 
     updater = Updater(TOKEN)
@@ -311,6 +333,7 @@ def main():
     )
     dispatcher.add_handler(CommandHandler("resting", resting))
     dispatcher.add_handler(CommandHandler("glory", glory_update))
+    dispatcher.add_handler(CommandHandler("help", show_help))
     dispatcher.add_handler(MessageHandler(Filters.command, unknown))
     updater.start_polling()
     updater.idle()
