@@ -9,6 +9,7 @@ attrs = "*"
 regex = "*"
 maya = "*"
 redis = "*"
+hiredis = "*"
 
 [dev-packages]
 
