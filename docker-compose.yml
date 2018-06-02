@@ -1,0 +1,10 @@
+version: "3"
+services:
+  db:
+    image: redislabs/rejson
+    restart: "always"
+  bot:
+    build: .
+    restart: "always"
+    depends_on:
+      - db
