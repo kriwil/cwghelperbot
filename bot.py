@@ -22,9 +22,10 @@ logger = logging.getLogger(__file__)
 TOKEN = os.environ.get("TELEGRAM_API_TOKEN")
 CHAT_WARS_ID = 408101137
 WAR_UTC_HOURS = [time(7), time(15), time(23)]
+REDIS_DB_NUMBER = 0
 
 
-connection = redis.StrictRedis(host="localhost", port=6379, db=0)
+connection = redis.StrictRedis(host="localhost", port=6379, db=REDIS_DB_NUMBER)
 
 
 class GuildExistError(Exception):
