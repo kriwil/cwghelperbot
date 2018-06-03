@@ -10,6 +10,7 @@ regex = "*"
 maya = "*"
 redis = "*"
 hiredis = "*"
+python-dateutil = "*"
 
 [dev-packages]
 
