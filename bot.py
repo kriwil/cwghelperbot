@@ -4,6 +4,7 @@ from datetime import time, datetime, timedelta, timezone
 import json
 import os
 
+from dateutil.tz import tzlocal
 from maya import MayaDT
 from telegram.ext import Updater, CommandHandler, Filters, MessageHandler, BaseFilter
 import attr
@@ -42,7 +43,7 @@ def guild_info_parser(bot, update):
     text = message.text
     if is_guild_info(text):
         group_id = message.chat_id
-        timestamp = MayaDT.from_datetime(message.forward_date).datetime(to_timezone="UTC")
+        timestamp = MayaDT.from_datetime(message.forward_date).datetime().replace(tzinfo=tzlocal())
         try:
             parse_guild_info(group_id, text, timestamp=timestamp)
         except GuildExistError:
