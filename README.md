@@ -5,3 +5,8 @@
 /glory -- slow glory gain for the last war (need both before and after war guild info)  
 /help -- show this message
 ```
+
+## Requirements
+
+- python 3.6
+- redis
